@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { API } from "@/context/AuthContext";
+import { API, useAuth } from "@/context/AuthContext";
 import { categoryLabel } from "@/lib/categories";
 import { Upload, CheckCircle2, ArrowRight, Copy, Check } from "lucide-react";
 
 export default function ProductDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, authHeaders } = useAuth();
   const [product, setProduct] = useState(null);
   const [bank, setBank] = useState(null);
   const [name, setName] = useState("");
@@ -38,16 +39,38 @@ export default function ProductDetailPage() {
   const onFileChange = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (f.size > 5 * 1024 * 1024) {
-      setErr("حجم الصورة كبير (الحد الأقصى 5MB)");
-      return;
-    }
+    setErr("");
+    // Compress + resize image to max 1600px on long side, JPEG quality 0.85
     const reader = new FileReader();
-    reader.onload = () => {
-      setReceipt(reader.result);
-      setReceiptPreview(reader.result);
-      setErr("");
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1600;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          if (width >= height) {
+            height = Math.round((height * MAX) / width);
+            width = MAX;
+          } else {
+            width = Math.round((width * MAX) / height);
+            height = MAX;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL("image/jpeg", 0.85);
+        setReceipt(compressed);
+        setReceiptPreview(compressed);
+      };
+      img.onerror = () => setErr("تعذّر قراءة الصورة، جرّب صورة أخرى");
+      img.src = ev.target.result;
     };
+    reader.onerror = () => setErr("تعذّر قراءة الملف");
     reader.readAsDataURL(f);
   };
 
@@ -64,10 +87,19 @@ export default function ProductDetailPage() {
         buyer_contact: contact.trim(),
         receipt_image: receipt,
         notes: notes.trim(),
-      }, { headers: authHeaders(), withCredentials: true });
+      }, { headers: authHeaders() });
       setDone(true);
-    } catch (e) {
-      setErr(e.response?.data?.detail || "حدث خطأ، حاول مجدداً");
+    } catch (ex) {
+      const detail = ex.response?.data?.detail;
+      if (typeof detail === "string") {
+        setErr(detail);
+      } else if (ex.code === "ERR_NETWORK") {
+        setErr("تعذّر الاتصال بالخادم، تحقق من الإنترنت وحاول مجدداً");
+      } else if (ex.response?.status === 413) {
+        setErr("صورة الإيصال كبيرة جداً، استخدم صورة أصغر");
+      } else {
+        setErr(`خطأ: ${ex.message || "حاول مجدداً"}`);
+      }
     } finally {
       setSubmitting(false);
     }
