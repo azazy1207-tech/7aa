@@ -61,6 +61,32 @@ let webpackConfig = {
 };
 
 webpackConfig.devServer = (devServerConfig) => {
+  // Remove deprecated WDS v4 middleware hooks (react-scripts 5 ships them, WDS 5 rejects them)
+  const removedBefore = devServerConfig.onBeforeSetupMiddleware;
+  const removedAfter = devServerConfig.onAfterSetupMiddleware;
+  delete devServerConfig.onBeforeSetupMiddleware;
+  delete devServerConfig.onAfterSetupMiddleware;
+  if (removedBefore || removedAfter) {
+    const existing = devServerConfig.setupMiddlewares;
+    devServerConfig.setupMiddlewares = (middlewares, devServer) => {
+      if (removedBefore) removedBefore(devServer);
+      if (existing) middlewares = existing(middlewares, devServer);
+      if (removedAfter) removedAfter(devServer);
+      return middlewares;
+    };
+  }
+  // Translate deprecated `https`/`http2` to WDS v5 `server` option
+  if ("https" in devServerConfig) {
+    const httpsVal = devServerConfig.https;
+    delete devServerConfig.https;
+    if (httpsVal) {
+      devServerConfig.server = typeof httpsVal === "object"
+        ? { type: "https", options: httpsVal }
+        : { type: "https" };
+    } else {
+      devServerConfig.server = { type: "http" };
+    }
+  }
   // Add health check endpoints if enabled
   if (config.enableHealthCheck && setupHealthEndpoints && healthPluginInstance) {
     const originalSetupMiddlewares = devServerConfig.setupMiddlewares;
