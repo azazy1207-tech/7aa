@@ -345,6 +345,48 @@ async def auth_me(user: User = Depends(get_current_user)):
     return user.model_dump()
 
 
+class ProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    contact: Optional[str] = None  # discord/whatsapp/etc.
+    roblox_username: Optional[str] = None
+
+
+@api_router.put("/auth/me")
+async def update_profile(req: ProfileUpdate, user: User = Depends(get_current_user)):
+    fields = {}
+    if req.name is not None and req.name.strip():
+        fields["name"] = req.name.strip()
+    if req.phone is not None:
+        fields["phone"] = req.phone.strip()
+    if req.contact is not None:
+        fields["contact"] = req.contact.strip()
+    if req.roblox_username is not None:
+        fields["roblox_username"] = req.roblox_username.strip()
+    if not fields:
+        raise HTTPException(status_code=400, detail="لا توجد بيانات للتحديث")
+    await db.users.update_one({"user_id": user.user_id}, {"$set": fields})
+    return await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
+
+
+@api_router.get("/users/me/trade-rooms")
+async def my_trade_rooms(user: User = Depends(get_current_user)):
+    docs = await db.trade_rooms.find(
+        {"$or": [{"host_user_id": user.user_id}, {"guest_user_id": user.user_id}]},
+        {"_id": 0, "messages": 0},
+    ).sort("created_at", -1).to_list(100)
+    return docs
+
+
+@api_router.get("/users/me/orders")
+async def my_orders(user: User = Depends(get_current_user)):
+    docs = await db.orders.find(
+        {"user_id": user.user_id},
+        {"_id": 0, "receipt_image": 0},  # exclude heavy image data
+    ).sort("created_at", -1).to_list(100)
+    return docs
+
+
 @api_router.post("/auth/logout")
 async def auth_logout(
     response: Response,
