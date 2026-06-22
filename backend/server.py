@@ -746,6 +746,83 @@ async def telegram_unlink(chat_id: int, admin=Depends(get_admin)):
     return {"ok": True}
 
 
+@api_router.post("/telegram/webhook")
+async def telegram_webhook(request: Request):
+    """Public endpoint that Telegram calls when users message the bot."""
+    try:
+        update = await request.json()
+        msg = update.get("message") or update.get("edited_message")
+        if not msg:
+            return {"ok": True}
+        chat = msg.get("chat", {})
+        chat_id = chat.get("id")
+        text = (msg.get("text") or "").strip()
+        if not chat_id:
+            return {"ok": True}
+
+        if text.startswith("/start"):
+            existing = await db.telegram_chats.find_one({"chat_id": chat_id})
+            if not existing:
+                await db.telegram_chats.insert_one({
+                    "chat_id": chat_id,
+                    "first_name": chat.get("first_name", ""),
+                    "username": chat.get("username", ""),
+                    "linked_at": now_iso(),
+                })
+                await tg_send_message(
+                    chat_id,
+                    "✅ <b>تم ربط حسابك بنجاح!</b>\n\n"
+                    "ستصلك إشعارات فورية بكل طلب جديد في متجر RBX SHOP 🛒\n\n"
+                    "أرسل /status للتحقق من حالة الربط.",
+                )
+            else:
+                await tg_send_message(chat_id, "ℹ️ حسابك مربوط مسبقاً. ستصلك الإشعارات تلقائياً.")
+        elif text.startswith("/status"):
+            existing = await db.telegram_chats.find_one({"chat_id": chat_id})
+            if existing:
+                await tg_send_message(chat_id, "✅ حسابك مربوط ومفعّل.")
+            else:
+                await tg_send_message(chat_id, "❌ حسابك غير مربوط. أرسل /start للربط.")
+        elif text.startswith("/help"):
+            await tg_send_message(
+                chat_id,
+                "<b>أوامر البوت:</b>\n"
+                "/start - ربط الحساب\n"
+                "/status - حالة الربط\n"
+                "/help - عرض الأوامر",
+            )
+        return {"ok": True}
+    except Exception as e:
+        logger.warning(f"Telegram webhook error: {e}")
+        return {"ok": True}
+
+
+@api_router.post("/admin/telegram/set-webhook")
+async def telegram_set_webhook(request: Request, admin=Depends(get_admin)):
+    """Register the webhook URL with Telegram."""
+    if not TG_API:
+        raise HTTPException(status_code=400, detail="بوت تيليجرام غير مهيأ")
+    base_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{base_url}/api/telegram/webhook"
+    async with httpx.AsyncClient(timeout=10) as http:
+        r = await http.post(
+            f"{TG_API}/setWebhook",
+            json={"url": webhook_url, "allowed_updates": ["message"]},
+        )
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=r.text)
+    return {"ok": True, "webhook_url": webhook_url, "telegram_response": r.json()}
+
+
+@api_router.get("/admin/telegram/webhook-info")
+async def telegram_webhook_info(admin=Depends(get_admin)):
+    if not TG_API:
+        raise HTTPException(status_code=400, detail="بوت تيليجرام غير مهيأ")
+    async with httpx.AsyncClient(timeout=5) as http:
+        r = await http.get(f"{TG_API}/getWebhookInfo")
+    return r.json()
+
+
 # ========== HEALTH ==========
 @api_router.get("/")
 async def root():
