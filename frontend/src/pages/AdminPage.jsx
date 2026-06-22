@@ -362,6 +362,26 @@ function OrdersAdmin({ headers }) {
                 </div>
                 <StatusBadge status={o.status} />
               </div>
+              {(o.user_email || o.user_phone || o.user_auth_type) && (
+                <div className="bg-[#00E5FF]/5 border border-[#00E5FF]/20 rounded-xl p-2 mb-2 space-y-0.5">
+                  <div className="text-[10px] text-[#00E5FF] font-bold">بيانات الحساب المسجّل</div>
+                  {o.user_email && (
+                    <div className="text-xs text-white flex items-center gap-1" dir="ltr">
+                      <span className="text-[#A0AEC0] text-[10px]">EMAIL:</span> {o.user_email}
+                    </div>
+                  )}
+                  {o.user_phone && (
+                    <div className="text-xs text-white flex items-center gap-1" dir="ltr">
+                      <span className="text-[#A0AEC0] text-[10px]">PHONE:</span> {o.user_phone}
+                    </div>
+                  )}
+                  {o.user_auth_type && (
+                    <div className="text-[10px] text-[#A0AEC0]">
+                      نوع الحساب: {o.user_auth_type === "google" ? "Google" : o.user_auth_type === "phone" ? "رقم جوال" : "ضيف"}
+                    </div>
+                  )}
+                </div>
+              )}
               {o.buyer_contact && <p className="text-xs text-[#A0AEC0] mb-1">تواصل: {o.buyer_contact}</p>}
               {o.notes && <p className="text-xs text-[#A0AEC0] mb-2">ملاحظات: {o.notes}</p>}
               <a href={o.receipt_image} target="_blank" rel="noreferrer" className="block">

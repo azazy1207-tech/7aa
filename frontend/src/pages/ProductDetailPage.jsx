@@ -25,6 +25,16 @@ export default function ProductDetailPage() {
     axios.get(`${API}/bank-info`).then((r) => setBank(r.data));
   }, [id]);
 
+  // Auto-fill buyer name from logged-in user
+  useEffect(() => {
+    if (user && !name) {
+      setName(user.name || "");
+      if (user.phone) setContact(user.phone);
+      else if (user.email) setContact(user.email);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   const onFileChange = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -54,7 +64,7 @@ export default function ProductDetailPage() {
         buyer_contact: contact.trim(),
         receipt_image: receipt,
         notes: notes.trim(),
-      });
+      }, { headers: authHeaders(), withCredentials: true });
       setDone(true);
     } catch (e) {
       setErr(e.response?.data?.detail || "حدث خطأ، حاول مجدداً");
@@ -239,3 +249,4 @@ function Row({ label, value, onCopy, copied, mono }) {
     </div>
   );
 }
+

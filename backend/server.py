@@ -115,6 +115,11 @@ class Order(BaseModel):
     receipt_image: str
     notes: Optional[str] = ""
     status: Literal["pending", "approved", "rejected"] = "pending"
+    # Auto-captured from logged-in user (if any)
+    user_id: Optional[str] = None
+    user_email: Optional[str] = None
+    user_phone: Optional[str] = None
+    user_auth_type: Optional[str] = None
     created_at: Optional[str] = None
 
 
@@ -158,9 +163,12 @@ async def get_current_user(
     session_token: Optional[str] = Cookie(None),
     authorization: Optional[str] = Header(None),
 ) -> User:
-    token = session_token
-    if not token and authorization and authorization.startswith("Bearer "):
+    # Prefer Bearer over cookie so stale cookies don't shadow an explicit token
+    token = None
+    if authorization and authorization.startswith("Bearer "):
         token = authorization[7:]
+    if not token:
+        token = session_token
     if not token:
         raise HTTPException(status_code=401, detail="غير مصرح")
 
@@ -179,6 +187,34 @@ async def get_current_user(
     user_doc = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
     if not user_doc:
         raise HTTPException(status_code=401, detail="المستخدم غير موجود")
+    return User(**user_doc)
+
+
+async def try_get_current_user(
+    session_token: Optional[str] = Cookie(None),
+    authorization: Optional[str] = Header(None),
+) -> Optional[User]:
+    """Returns the user if authenticated, otherwise None (no error)."""
+    token = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:]
+    if not token:
+        token = session_token
+    if not token:
+        return None
+    session = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
+    if not session:
+        return None
+    expires_at = session.get("expires_at")
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at and expires_at < datetime.now(timezone.utc):
+        return None
+    user_doc = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
+    if not user_doc:
+        return None
     return User(**user_doc)
 
 
@@ -414,7 +450,7 @@ async def update_bank_info(info: BankInfo, admin=Depends(get_admin)):
 
 # ========== ORDERS ==========
 @api_router.post("/orders")
-async def create_order(o: OrderCreate):
+async def create_order(o: OrderCreate, user: Optional[User] = Depends(try_get_current_user)):
     prod = await db.products.find_one({"id": o.product_id}, {"_id": 0})
     if not prod:
         raise HTTPException(status_code=404, detail="المنتج غير موجود")
@@ -426,6 +462,10 @@ async def create_order(o: OrderCreate):
         buyer_contact=o.buyer_contact or "",
         receipt_image=o.receipt_image,
         notes=o.notes or "",
+        user_id=user.user_id if user else None,
+        user_email=user.email if user else None,
+        user_phone=user.phone if user else None,
+        user_auth_type=user.auth_type if user else None,
     )
     doc = order.model_dump()
     doc["created_at"] = now_iso()
