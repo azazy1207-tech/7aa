@@ -1,0 +1,130 @@
+{
+  "project_context": {
+    "domain": "Gaming Marketplace & Trading Platform",
+    "theme": "Dark",
+    "archetype": "Archetype 6 (Vibrant Play) adapted for Dark Mode",
+    "description": "An Arabic (RTL) marketplace for Roblox players to buy items (Adopt Me, Grow a Garden) and trade. The UI must be playful, easy on the eyes (dark mode), and distinctively gaming-oriented without relying on cliché purple gradients. Emphasize rounded, soft forms and vibrant high-contrast accents."
+  },
+  "global_rules": {
+    "layout_direction": "rtl",
+    "html_attributes": {
+      "dir": "rtl",
+      "lang": "ar"
+    },
+    "tailwind_rtl_strategy": "MUST use Tailwind logical properties natively (e.g., `ps-4`, `pe-4`, `ms-2`, `text-start`, `border-s`). DO NOT use absolute directional classes like `pl-4` or `mr-2` which break RTL layouts.",
+    "icons": "Use Phosphor Icons (`@phosphor-icons/react`). Mirror directional icons (like arrows or back buttons) for RTL using `transform scale-x-[-1]` if the icon library does not auto-flip them."
+  },
+  "colors": {
+    "backgrounds": {
+      "base": "#0F1115",
+      "surface": "#1A1D24",
+      "surface_hover": "#252932",
+      "overlay": "rgba(15, 17, 21, 0.8)"
+    },
+    "primary": {
+      "default": "#00E5FF",
+      "hover": "#00B8CC",
+      "description": "Electric Cyan - Playful and sharp, used for primary actions and trade confirmations."
+    },
+    "secondary": {
+      "default": "#FFDE00",
+      "hover": "#CCB200",
+      "description": "Sunny Yellow - Used for highlights, stars, or secondary playful buttons."
+    },
+    "accent": {
+      "default": "#FF4B72",
+      "hover": "#CC3C5B",
+      "description": "Soft Neon Pink - Used for alerts, delete actions, or removing items from the trade grid."
+    },
+    "text": {
+      "primary": "#F8F9FA",
+      "secondary": "#A0AEC0",
+      "muted": "#718096"
+    },
+    "borders": {
+      "default": "#2D3748",
+      "focus": "#00E5FF"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "headings": "'Readex Pro', sans-serif",
+      "body": "'IBM Plex Sans Arabic', sans-serif"
+    },
+    "scale": {
+      "h1": "text-4xl md:text-5xl font-black tracking-tight text-start",
+      "h2": "text-2xl md:text-3xl font-bold text-start",
+      "h3": "text-xl md:text-2xl font-bold text-start",
+      "h4": "text-lg font-semibold text-start",
+      "body": "text-base leading-relaxed text-start text-text-secondary",
+      "small": "text-sm text-text-muted"
+    },
+    "rtl_considerations": "Arabic fonts require taller line heights. Use `leading-relaxed` or `leading-loose`. Never use `tracking-widest` for Arabic as it disconnects cursive scripts."
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous Spacing (Padding heavy) to keep it comfortable. Use `gap-6` and `gap-8` for grids.",
+    "corners": "Playful and friendly: Use `rounded-2xl` or `rounded-3xl` for major cards and modals, `rounded-xl` for buttons and smaller inputs.",
+    "container": "Max width `max-w-7xl`, centered with `mx-auto`, lateral padding `px-4 sm:px-6 lg:px-8`."
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#00E5FF] text-[#0F1115] font-bold rounded-xl px-6 py-3 hover:-translate-y-1 hover:shadow-[0_4px_20px_rgba(0,229,255,0.4)] transition-all duration-200",
+      "secondary": "bg-[#252932] text-white font-bold rounded-xl px-6 py-3 hover:bg-[#2D3748] transition-all",
+      "danger": "bg-[#FF4B72] text-white font-bold rounded-xl px-6 py-3 hover:-translate-y-1 hover:shadow-[0_4px_20px_rgba(255,75,114,0.4)] transition-all"
+    },
+    "cards": {
+      "product_card": "bg-[#1A1D24] rounded-3xl p-4 border border-[#2D3748] hover:border-[#00E5FF] transition-colors group overflow-hidden flex flex-col",
+      "image_container": "w-full aspect-square rounded-2xl overflow-hidden bg-[#252932] relative mb-4"
+    },
+    "trade_section": {
+      "container": "grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-6 items-center p-6 bg-[#1A1D24] rounded-3xl border border-[#2D3748]",
+      "grid_panel": "grid grid-cols-3 gap-3 bg-[#0F1115] p-4 rounded-2xl",
+      "slot": "aspect-square rounded-xl border-2 border-dashed border-[#2D3748] flex items-center justify-center hover:border-[#00E5FF]/50 transition-colors bg-[#1A1D24] relative cursor-pointer",
+      "filled_slot": "aspect-square rounded-xl border-2 border-[#00E5FF] overflow-hidden relative group",
+      "center_indicator": "flex flex-col items-center justify-center text-[#00E5FF] text-4xl"
+    },
+    "inputs": {
+      "text": "w-full bg-[#0F1115] border border-[#2D3748] rounded-xl px-4 py-3 text-white focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] outline-none transition-all text-start",
+      "file_upload": "w-full border-2 border-dashed border-[#2D3748] rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:border-[#00E5FF] hover:bg-[#00E5FF]/5 transition-all text-start"
+    },
+    "modals": {
+      "overlay": "fixed inset-0 bg-[#0F1115]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4",
+      "content": "bg-[#1A1D24] rounded-3xl w-full max-w-md p-8 border border-[#2D3748] shadow-2xl relative"
+    }
+  },
+  "media_and_assets": {
+    "image_urls": [
+      {
+        "category": "product_adopt_me_pet",
+        "url": "https://images.unsplash.com/photo-1636622433525-127afdf3662d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTF8MHwxfHNlYXJjaHwxfHxjdXRlJTIwM2QlMjBwZXQlMjBjaGFyYWN0ZXJ8ZW58MHx8fHwxNzgyMTE3MjczfDA&ixlib=rb-4.1.0&q=85",
+        "description": "White 3D pet character for Adopt Me product placeholders"
+      },
+      {
+        "category": "product_adopt_me_pet_orange",
+        "url": "https://images.unsplash.com/photo-1639628735078-ed2f038a193e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTF8MHwxfHNlYXJjaHwzfHxjdXRlJTIwM2QlMjBwZXQlMjBjaGFyYWN0ZXJ8ZW58MHx8fHwxNzgyMTE3MjczfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Orange cartoon character for Adopt Me product placeholders"
+      },
+      {
+        "category": "product_grow_garden",
+        "url": "https://images.unsplash.com/photo-1775193823752-84a3c871f93a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHwxfHwzZCUyMGZhbnRhc3klMjBnYW1lJTIwZW52aXJvbm1lbnR8ZW58MHx8fHwxNzgyMTE3MjczfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Fantasy village/environment for Grow a Garden maps"
+      },
+      {
+        "category": "product_steal_brainrot",
+        "url": "https://images.unsplash.com/photo-1660644808219-1f103401bc85?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwzfHxoYWNrZXIlMjBjaGFyYWN0ZXIlMjAzZCUyMGdhbWV8ZW58MHx8fHwxNzgyMTE3MjczfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Hacker/Computer setup 3D image for Steal Brainrot items"
+      }
+    ]
+  },
+  "testing": {
+    "attributes": "All buttons, inputs, slots, and interactive elements MUST have descriptive `data-testid` attributes (e.g., `data-testid='trade-slot-left-1'`, `data-testid='buy-button-product-123'`, `data-testid='receipt-upload-input'`)."
+  },
+  "instructions_to_main_agent": [
+    "Ensure `dir=\"rtl\"` is applied to the root `<html>` element.",
+    "Use standard HTML inputs and dialogs enhanced with Tailwind since this is raw React without Shadcn pre-installed. If Shadcn is needed, customize the UI heavily to match this Dark Gaming theme.",
+    "For the trade section, implement two 3x3 grids. Add hover states allowing users to click a slot to open a selection modal (catalog), then populate the slot. Include a 'remove' button on filled slots.",
+    "For the purchase flow, create a direct manual bank transfer UI showing the seller's account details, an input field for the user's name, and an area to upload a receipt image.",
+    "Implement Google/Phone/Guest login options creatively on a modal.",
+    "Avoid `ml-`, `mr-`, `pl-`, `pr-` entirely. ONLY use `ms-`, `me-`, `ps-`, `pe-` so the layout perfectly mirrors in RTL."
+  ]
+}
