@@ -622,6 +622,204 @@ async def admin_delete_trade(trade_id: str, admin=Depends(get_admin)):
     return {"ok": True}
 
 
+# ========== TRADE ROOMS (real-time negotiation) ==========
+class RoomCreate(BaseModel):
+    title: Optional[str] = "غرفة تداول جديدة"
+
+
+class RoomSlotsUpdate(BaseModel):
+    slots: List[TradeSlot]
+
+
+class RoomMessage(BaseModel):
+    text: str
+
+
+def empty_slots():
+    return [TradeSlot().model_dump() for _ in range(9)]
+
+
+@api_router.post("/trade-rooms")
+async def create_room(req: RoomCreate, user: User = Depends(get_current_user)):
+    room = {
+        "id": f"room_{uuid.uuid4().hex[:10]}",
+        "title": req.title or "غرفة تداول جديدة",
+        "host_user_id": user.user_id,
+        "host_name": user.name,
+        "host_slots": empty_slots(),
+        "host_confirmed": False,
+        "guest_user_id": None,
+        "guest_name": None,
+        "guest_slots": empty_slots(),
+        "guest_confirmed": False,
+        "messages": [],
+        "status": "waiting",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    await db.trade_rooms.insert_one(room)
+    room.pop("_id", None)
+    return room
+
+
+@api_router.get("/trade-rooms")
+async def list_rooms(status: Optional[str] = None):
+    query = {}
+    if status:
+        query["status"] = status
+    else:
+        query["status"] = {"$in": ["waiting", "active"]}
+    docs = await db.trade_rooms.find(query, {"_id": 0, "messages": 0}).sort("created_at", -1).to_list(100)
+    return docs
+
+
+@api_router.get("/trade-rooms/{room_id}")
+async def get_room(room_id: str):
+    doc = await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="الغرفة غير موجودة")
+    return doc
+
+
+@api_router.post("/trade-rooms/{room_id}/join")
+async def join_room(room_id: str, user: User = Depends(get_current_user)):
+    room = await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+    if not room:
+        raise HTTPException(status_code=404, detail="الغرفة غير موجودة")
+    if room["host_user_id"] == user.user_id:
+        return room
+    if room["guest_user_id"] and room["guest_user_id"] != user.user_id:
+        raise HTTPException(status_code=409, detail="الغرفة ممتلئة")
+    if room["status"] not in ["waiting", "active"]:
+        raise HTTPException(status_code=400, detail="الغرفة مغلقة")
+    await db.trade_rooms.update_one(
+        {"id": room_id},
+        {"$set": {
+            "guest_user_id": user.user_id,
+            "guest_name": user.name,
+            "status": "active",
+            "updated_at": now_iso(),
+        }},
+    )
+    return await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+
+
+@api_router.put("/trade-rooms/{room_id}/slots")
+async def update_my_slots(room_id: str, body: RoomSlotsUpdate, user: User = Depends(get_current_user)):
+    room = await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+    if not room:
+        raise HTTPException(status_code=404, detail="الغرفة غير موجودة")
+    slots = (body.slots or [])[:9]
+    while len(slots) < 9:
+        slots.append(TradeSlot())
+    slot_dicts = [s.model_dump() if isinstance(s, TradeSlot) else s for s in slots]
+    if room["host_user_id"] == user.user_id:
+        field = "host_slots"
+    elif room["guest_user_id"] == user.user_id:
+        field = "guest_slots"
+    else:
+        raise HTTPException(status_code=403, detail="لست من المشاركين")
+    await db.trade_rooms.update_one(
+        {"id": room_id},
+        {"$set": {field: slot_dicts, "host_confirmed": False, "guest_confirmed": False, "updated_at": now_iso()}},
+    )
+    return await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+
+
+@api_router.post("/trade-rooms/{room_id}/messages")
+async def add_message(room_id: str, body: RoomMessage, user: User = Depends(get_current_user)):
+    room = await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+    if not room:
+        raise HTTPException(status_code=404, detail="الغرفة غير موجودة")
+    if room["host_user_id"] != user.user_id and room["guest_user_id"] != user.user_id:
+        raise HTTPException(status_code=403, detail="لست من المشاركين")
+    text = (body.text or "").strip()[:500]
+    if not text:
+        raise HTTPException(status_code=400, detail="رسالة فارغة")
+    msg = {
+        "id": uuid.uuid4().hex[:8],
+        "user_id": user.user_id,
+        "name": user.name,
+        "text": text,
+        "ts": now_iso(),
+    }
+    await db.trade_rooms.update_one(
+        {"id": room_id},
+        {"$push": {"messages": msg}, "$set": {"updated_at": now_iso()}},
+    )
+    return msg
+
+
+@api_router.post("/trade-rooms/{room_id}/confirm")
+async def confirm_room(room_id: str, user: User = Depends(get_current_user)):
+    room = await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+    if not room:
+        raise HTTPException(status_code=404, detail="الغرفة غير موجودة")
+    if room["host_user_id"] == user.user_id:
+        field = "host_confirmed"
+    elif room["guest_user_id"] == user.user_id:
+        field = "guest_confirmed"
+    else:
+        raise HTTPException(status_code=403, detail="لست من المشاركين")
+    await db.trade_rooms.update_one(
+        {"id": room_id},
+        {"$set": {field: True, "updated_at": now_iso()}},
+    )
+    updated = await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+    if updated.get("host_confirmed") and updated.get("guest_confirmed"):
+        await db.trade_rooms.update_one(
+            {"id": room_id},
+            {"$set": {"status": "completed", "completed_at": now_iso()}},
+        )
+        updated = await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+    return updated
+
+
+@api_router.post("/trade-rooms/{room_id}/leave")
+async def leave_room(room_id: str, user: User = Depends(get_current_user)):
+    room = await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+    if not room:
+        raise HTTPException(status_code=404, detail="غير موجود")
+    if room["host_user_id"] == user.user_id:
+        await db.trade_rooms.update_one(
+            {"id": room_id},
+            {"$set": {"status": "cancelled", "updated_at": now_iso()}},
+        )
+    elif room["guest_user_id"] == user.user_id:
+        await db.trade_rooms.update_one(
+            {"id": room_id},
+            {"$set": {
+                "guest_user_id": None,
+                "guest_name": None,
+                "guest_slots": empty_slots(),
+                "guest_confirmed": False,
+                "host_confirmed": False,
+                "status": "waiting",
+                "updated_at": now_iso(),
+            }},
+        )
+    else:
+        raise HTTPException(status_code=403, detail="لست من المشاركين")
+    return {"ok": True}
+
+
+@api_router.delete("/trade-rooms/{room_id}")
+async def delete_room(room_id: str, user: User = Depends(get_current_user)):
+    room = await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+    if not room:
+        raise HTTPException(status_code=404, detail="غير موجود")
+    if room["host_user_id"] != user.user_id:
+        raise HTTPException(status_code=403, detail="فقط منشئ الغرفة")
+    await db.trade_rooms.delete_one({"id": room_id})
+    return {"ok": True}
+
+
+@api_router.delete("/admin/trade-rooms/{room_id}")
+async def admin_delete_room(room_id: str, admin=Depends(get_admin)):
+    await db.trade_rooms.delete_one({"id": room_id})
+    return {"ok": True}
+
+
 
 # ========== TELEGRAM NOTIFICATIONS ==========
 TG_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}" if TELEGRAM_BOT_TOKEN else None

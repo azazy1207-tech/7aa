@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import StorePage from "@/pages/StorePage";
 import ProductDetailPage from "@/pages/ProductDetailPage";
 import TradesPage from "@/pages/TradesPage";
+import TradeRoomPage from "@/pages/TradeRoomPage";
 import AdminPage from "@/pages/AdminPage";
 import AuthCallback from "@/pages/AuthCallback";
 
@@ -22,6 +23,7 @@ function AppRouter() {
           <Route path="/" element={<StorePage />} />
           <Route path="/product/:id" element={<ProductDetailPage />} />
           <Route path="/trades" element={<TradesPage />} />
+          <Route path="/trades/room/:id" element={<TradeRoomPage />} />
           <Route path="/admin" element={<AdminPage />} />
         </Routes>
       </main>

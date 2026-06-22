@@ -659,34 +659,64 @@ function BankAdmin({ headers }) {
 
 function TradesAdmin({ headers }) {
   const [trades, setTrades] = useState([]);
-  const refresh = () => axios.get(`${API}/trades?status=all`).then((r) => setTrades(r.data));
+  const [rooms, setRooms] = useState([]);
+  const refresh = () => {
+    axios.get(`${API}/trades?status=all`).then((r) => setTrades(r.data));
+    axios.get(`${API}/trade-rooms?status=waiting`).then((r) => setRooms((prev) => [...r.data]));
+    axios.get(`${API}/trade-rooms?status=active`).then((r) => setRooms((prev) => [...prev, ...r.data]));
+  };
   useEffect(() => { refresh(); }, []);
-  const remove = async (id) => {
+  const removeRoom = async (id) => {
+    if (!window.confirm("حذف الغرفة؟")) return;
+    await axios.delete(`${API}/admin/trade-rooms/${id}`, { headers: headers() });
+    refresh();
+  };
+  const removeTrade = async (id) => {
     if (!window.confirm("حذف التداول؟")) return;
     await axios.delete(`${API}/admin/trades/${id}`, { headers: headers() });
     refresh();
   };
   return (
     <div data-testid="trades-admin">
-      <h2 className="text-xl font-bold text-white mb-4">التداولات ({trades.length})</h2>
-      <div className="grid md:grid-cols-2 gap-4">
-        {trades.map((t) => (
-          <div key={t.id} className="bg-[#1A1D24] rounded-2xl p-4 border border-[#2D3748]">
+      <h2 className="text-xl font-bold text-white mb-4">غرف التداول ({rooms.length})</h2>
+      <div className="grid md:grid-cols-2 gap-4 mb-6">
+        {rooms.map((r) => (
+          <div key={r.id} className="bg-[#1A1D24] rounded-2xl p-4 border border-[#2D3748]">
             <div className="flex justify-between items-start mb-2">
               <div>
-                <h3 className="font-bold text-white">{t.title}</h3>
-                <p className="text-xs text-[#A0AEC0]">من: {t.creator_name} · حالة: {t.status}</p>
-                {t.matched_with_name && <p className="text-xs text-[#00E5FF]">مع: {t.matched_with_name}</p>}
+                <h3 className="font-bold text-white">{r.title}</h3>
+                <p className="text-xs text-[#A0AEC0]">المضيف: {r.host_name} · حالة: {r.status}</p>
+                {r.guest_name && <p className="text-xs text-[#FF4B72]">الضيف: {r.guest_name}</p>}
               </div>
-              <button onClick={() => remove(t.id)} className="bg-[#FF4B72]/10 text-[#FF4B72] rounded-lg p-2" data-testid={`admin-delete-trade-${t.id}`}>
+              <button onClick={() => removeRoom(r.id)} className="bg-[#FF4B72]/10 text-[#FF4B72] rounded-lg p-2" data-testid={`admin-delete-room-${r.id}`}>
                 <Trash2 size={14} />
               </button>
             </div>
-            {t.contact && <p className="text-xs text-[#A0AEC0]">تواصل: {t.contact}</p>}
           </div>
         ))}
-        {trades.length === 0 && <p className="text-[#A0AEC0]">لا توجد تداولات.</p>}
+        {rooms.length === 0 && <p className="text-[#A0AEC0]">لا توجد غرف نشطة.</p>}
       </div>
+
+      {trades.length > 0 && (
+        <>
+          <h2 className="text-xl font-bold text-white mb-4">التداولات القديمة ({trades.length})</h2>
+          <div className="grid md:grid-cols-2 gap-4">
+            {trades.map((t) => (
+              <div key={t.id} className="bg-[#1A1D24] rounded-2xl p-4 border border-[#2D3748]">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <h3 className="font-bold text-white">{t.title}</h3>
+                    <p className="text-xs text-[#A0AEC0]">من: {t.creator_name} · حالة: {t.status}</p>
+                  </div>
+                  <button onClick={() => removeTrade(t.id)} className="bg-[#FF4B72]/10 text-[#FF4B72] rounded-lg p-2" data-testid={`admin-delete-trade-${t.id}`}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
