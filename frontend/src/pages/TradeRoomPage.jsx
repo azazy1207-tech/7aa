@@ -2,7 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { API, useAuth } from "@/context/AuthContext";
-import { Plus, X, Send, CheckCircle2, ArrowRight, LogOut, Trash2, Search } from "lucide-react";
+import { Plus, X, Send, CheckCircle2, ArrowRight, LogOut, Search, Check, CheckCheck } from "lucide-react";
+
+const ONLINE_THRESHOLD_MS = 10000; // 10 seconds
+
+function isOnline(lastSeen) {
+  if (!lastSeen) return false;
+  const diff = Date.now() - new Date(lastSeen).getTime();
+  return diff < ONLINE_THRESHOLD_MS;
+}
 
 export default function TradeRoomPage() {
   const { id } = useParams();
@@ -10,11 +18,13 @@ export default function TradeRoomPage() {
   const { user, authHeaders } = useAuth();
   const [room, setRoom] = useState(null);
   const [products, setProducts] = useState([]);
-  const [picker, setPicker] = useState(null); // index for my slot
+  const [picker, setPicker] = useState(null);
   const [chatText, setChatText] = useState("");
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState("");
+  const [tick, setTick] = useState(0); // forces re-render every second for online status
   const chatEndRef = useRef(null);
+  const prevGuestPresent = useRef(null);
 
   const isHost = user && room?.host_user_id === user.user_id;
   const isGuest = user && room?.guest_user_id === user.user_id;
@@ -22,6 +32,8 @@ export default function TradeRoomPage() {
   const mySlots = isHost ? room?.host_slots : isGuest ? room?.guest_slots : null;
   const theirSlots = isHost ? room?.guest_slots : isGuest ? room?.host_slots : null;
   const theirName = isHost ? room?.guest_name : room?.host_name;
+  const theirLastSeen = isHost ? room?.last_seen_guest : room?.last_seen_host;
+  const theirOnline = isOnline(theirLastSeen);
   const myConfirmed = isHost ? room?.host_confirmed : room?.guest_confirmed;
   const theirConfirmed = isHost ? room?.guest_confirmed : room?.host_confirmed;
 
@@ -36,9 +48,24 @@ export default function TradeRoomPage() {
     }
   };
 
+  const sendHeartbeat = async () => {
+    try {
+      await axios.post(`${API}/trade-rooms/${id}/heartbeat`, {}, { headers: authHeaders() });
+    } catch (_) {
+      // ignore
+    }
+  };
+
+  const markRead = async () => {
+    try {
+      await axios.post(`${API}/trade-rooms/${id}/mark-read`, {}, { headers: authHeaders() });
+    } catch (_) {
+      // ignore
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
-    // Join (idempotent for host)
     (async () => {
       try {
         await axios.post(`${API}/trade-rooms/${id}/join`, {}, { headers: authHeaders() });
@@ -48,12 +75,35 @@ export default function TradeRoomPage() {
         }
       }
       fetchRoom();
+      sendHeartbeat();
+      markRead();
     })();
-    // Poll every 2 seconds
-    const t = setInterval(fetchRoom, 2000);
-    return () => clearInterval(t);
+    const t = setInterval(() => {
+      fetchRoom();
+      if (isParticipant) {
+        sendHeartbeat();
+        markRead();
+      }
+    }, 2000);
+    // Local clock tick for online indicator
+    const clockTick = setInterval(() => setTick((x) => x + 1), 1000);
+    return () => {
+      clearInterval(t);
+      clearInterval(clockTick);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, user?.user_id]);
+  }, [id, user?.user_id, isParticipant]);
+
+  // Notify when guest leaves
+  useEffect(() => {
+    const currentGuestPresent = !!room?.guest_user_id;
+    if (prevGuestPresent.current === true && !currentGuestPresent && isHost) {
+      setErr(`👋 ${prevGuestPresent.currentName || "الشخص الآخر"} غادر الغرفة`);
+      setTimeout(() => setErr(""), 4000);
+    }
+    prevGuestPresent.current = currentGuestPresent;
+    prevGuestPresent.currentName = room?.guest_name;
+  }, [room?.guest_user_id, isHost, room?.guest_name]);
 
   useEffect(() => {
     axios.get(`${API}/products`).then((r) => setProducts(r.data.filter((p) => p.is_tradeable !== false)));
@@ -224,12 +274,14 @@ export default function TradeRoomPage() {
       <div className="grid lg:grid-cols-[1fr_1fr_360px] gap-4">
         {/* My slots */}
         <SlotPanel
-          title={isHost || isGuest ? "تداولك" : "صاحب الغرفة"}
+          title="تداولك"
           name={user.name}
           color="#00E5FF"
           slots={isHost || isGuest ? mySlots : room.host_slots}
           editable={isHost || isGuest}
           confirmed={myConfirmed}
+          isMe={true}
+          online={true}
           onSlotClick={(i) => setPicker(i)}
           onClear={clearSlot}
           side="mine"
@@ -237,13 +289,15 @@ export default function TradeRoomPage() {
         />
         {/* Their slots */}
         <SlotPanel
-          title={isHost || isGuest ? `${theirName || "بانتظار شريك"}` : "الطرف الثاني"}
+          title={theirName || "بانتظار شريك"}
           name={isHost || isGuest ? theirName : room.guest_name}
           color="#FF4B72"
           slots={isHost || isGuest ? theirSlots : room.guest_slots}
           editable={false}
           confirmed={theirConfirmed}
           waiting={!theirName && (isHost || isGuest)}
+          online={theirOnline}
+          lastSeen={theirLastSeen}
           side="theirs"
           status={status}
         />
@@ -272,16 +326,42 @@ export default function TradeRoomPage() {
   );
 }
 
-function SlotPanel({ title, name, color, slots, editable, confirmed, waiting, onSlotClick, onClear, side, status }) {
+function SlotPanel({ title, name, color, slots, editable, confirmed, waiting, online, lastSeen, isMe, onSlotClick, onClear, side, status }) {
+  const timeAgo = (iso) => {
+    if (!iso) return "";
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 60) return "قبل لحظات";
+    if (diff < 3600) return `قبل ${Math.floor(diff / 60)} دقيقة`;
+    if (diff < 86400) return `قبل ${Math.floor(diff / 3600)} ساعة`;
+    return "غير متصل";
+  };
   return (
     <div className="bg-[#1A1D24] rounded-3xl p-4 border-2 transition-all" style={{ borderColor: confirmed ? "#22C55E" : "#2D3748" }} data-testid={`panel-${side}`}>
       <div className="flex items-center justify-between mb-3">
-        <div>
-          <h3 className="font-bold text-white">{title}</h3>
-          {name && <p className="text-xs" style={{ color }}>{name}</p>}
+        <div className="flex-1 min-w-0">
+          <h3 className="font-bold text-white truncate">{title}</h3>
+          {name && (
+            <div className="flex items-center gap-1.5 mt-0.5">
+              {!isMe && (
+                <span
+                  className="inline-block w-2 h-2 rounded-full"
+                  style={{ background: online ? "#22C55E" : "#6B7280", boxShadow: online ? "0 0 6px #22C55E" : "none" }}
+                  data-testid={`online-indicator-${side}`}
+                />
+              )}
+              <p className="text-xs truncate" style={{ color }}>
+                {name}
+                {!isMe && (
+                  <span className="text-[10px] text-[#A0AEC0] ms-1">
+                    {online ? "متصل الآن" : timeAgo(lastSeen)}
+                  </span>
+                )}
+              </p>
+            </div>
+          )}
         </div>
         {confirmed ? (
-          <span className="bg-[#22C55E]/15 text-[#22C55E] text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1">
+          <span className="bg-[#22C55E]/15 text-[#22C55E] text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 whitespace-nowrap">
             <CheckCircle2 size={10} /> مؤكد
           </span>
         ) : (
@@ -349,6 +429,15 @@ function ChatPanel({ messages, user, onSend, text, setText, sending, canChat, ch
                 <div className={`max-w-[80%] rounded-2xl px-3 py-2 ${mine ? "bg-[#00E5FF] text-[#0F1115]" : "bg-[#252932] text-white"}`}>
                   {!mine && <div className="text-[10px] font-bold text-[#FF4B72] mb-0.5">{m.name}</div>}
                   <div className="text-sm break-words">{m.text}</div>
+                  {mine && (
+                    <div className="text-[10px] mt-1 flex justify-end items-center gap-0.5 opacity-70">
+                      {m.read_at ? (
+                        <CheckCheck size={12} className="text-[#0F1115]" data-testid={`msg-read-${m.id}`} />
+                      ) : (
+                        <Check size={12} className="text-[#0F1115]" data-testid={`msg-sent-${m.id}`} />
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );

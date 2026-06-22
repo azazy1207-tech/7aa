@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useState } from "react";
 import AuthModal from "./AuthModal";
-import { LogOut, ShoppingBag, Repeat, ShieldCheck, Menu, X } from "lucide-react";
+import { LogOut, ShoppingBag, Repeat, ShieldCheck, Menu, X, LayoutGrid } from "lucide-react";
 
 export default function Header() {
   const { user, logout, admin } = useAuth();
@@ -13,6 +13,7 @@ export default function Header() {
 
   const nav = [
     { to: "/", label: "المتجر", icon: ShoppingBag, testid: "nav-store" },
+    { to: "/catalog", label: "لوحة العناصر", icon: LayoutGrid, testid: "nav-catalog" },
     { to: "/trades", label: "التداول", icon: Repeat, testid: "nav-trades" },
   ];
 

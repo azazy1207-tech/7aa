@@ -687,7 +687,11 @@ async def join_room(room_id: str, user: User = Depends(get_current_user)):
     if not room:
         raise HTTPException(status_code=404, detail="الغرفة غير موجودة")
     if room["host_user_id"] == user.user_id:
-        return room
+        await db.trade_rooms.update_one(
+            {"id": room_id},
+            {"$set": {"last_seen_host": now_iso(), "updated_at": now_iso()}},
+        )
+        return await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
     if room["guest_user_id"] and room["guest_user_id"] != user.user_id:
         raise HTTPException(status_code=409, detail="الغرفة ممتلئة")
     if room["status"] not in ["waiting", "active"]:
@@ -698,10 +702,49 @@ async def join_room(room_id: str, user: User = Depends(get_current_user)):
             "guest_user_id": user.user_id,
             "guest_name": user.name,
             "status": "active",
+            "last_seen_guest": now_iso(),
             "updated_at": now_iso(),
         }},
     )
     return await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+
+
+@api_router.post("/trade-rooms/{room_id}/heartbeat")
+async def heartbeat(room_id: str, user: User = Depends(get_current_user)):
+    room = await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+    if not room:
+        raise HTTPException(status_code=404, detail="الغرفة غير موجودة")
+    field = None
+    if room["host_user_id"] == user.user_id:
+        field = "last_seen_host"
+    elif room["guest_user_id"] == user.user_id:
+        field = "last_seen_guest"
+    if field:
+        await db.trade_rooms.update_one({"id": room_id}, {"$set": {field: now_iso()}})
+    return {"ok": True}
+
+
+@api_router.post("/trade-rooms/{room_id}/mark-read")
+async def mark_read(room_id: str, user: User = Depends(get_current_user)):
+    room = await db.trade_rooms.find_one({"id": room_id}, {"_id": 0})
+    if not room:
+        raise HTTPException(status_code=404, detail="الغرفة غير موجودة")
+    if room["host_user_id"] != user.user_id and room["guest_user_id"] != user.user_id:
+        raise HTTPException(status_code=403, detail="لست من المشاركين")
+    # Mark all messages from the OTHER user as read by me
+    ts = now_iso()
+    messages = room.get("messages", [])
+    changed = False
+    for m in messages:
+        if m.get("user_id") != user.user_id and not m.get("read_at"):
+            m["read_at"] = ts
+            changed = True
+    if changed:
+        await db.trade_rooms.update_one(
+            {"id": room_id},
+            {"$set": {"messages": messages, "updated_at": now_iso()}},
+        )
+    return {"ok": True, "marked": changed}
 
 
 @api_router.put("/trade-rooms/{room_id}/slots")

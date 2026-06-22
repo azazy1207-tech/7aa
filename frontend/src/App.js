@@ -6,6 +6,7 @@ import StorePage from "@/pages/StorePage";
 import ProductDetailPage from "@/pages/ProductDetailPage";
 import TradesPage from "@/pages/TradesPage";
 import TradeRoomPage from "@/pages/TradeRoomPage";
+import CatalogPage from "@/pages/CatalogPage";
 import AdminPage from "@/pages/AdminPage";
 import AuthCallback from "@/pages/AuthCallback";
 
@@ -21,6 +22,7 @@ function AppRouter() {
       <main className="min-h-screen grain-bg">
         <Routes>
           <Route path="/" element={<StorePage />} />
+          <Route path="/catalog" element={<CatalogPage />} />
           <Route path="/product/:id" element={<ProductDetailPage />} />
           <Route path="/trades" element={<TradesPage />} />
           <Route path="/trades/room/:id" element={<TradeRoomPage />} />
