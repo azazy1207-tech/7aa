@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth, API } from "@/context/AuthContext";
 import axios from "axios";
 import { CATEGORIES, categoryLabel } from "@/lib/categories";
-import { Plus, Edit, Trash2, Save, X, Package, Receipt, Settings, LogOut, Upload, Check, ShieldCheck, ArrowLeftRight } from "lucide-react";
+import { Plus, Edit, Trash2, Save, X, Package, Receipt, Settings, LogOut, Upload, Check, ShieldCheck, ArrowLeftRight, Bell, Send } from "lucide-react";
 
 export default function AdminPage() {
   const { admin, adminLogin, adminLogout, adminHeaders } = useAuth();
@@ -34,6 +34,7 @@ export default function AdminPage() {
           { id: "orders", label: "الطلبات", icon: Receipt },
           { id: "bank", label: "بيانات البنك", icon: Settings },
           { id: "trades", label: "التداولات", icon: ArrowLeftRight },
+          { id: "telegram", label: "إشعارات تيليجرام", icon: Bell },
         ].map((t) => {
           const Ic = t.icon;
           return (
@@ -55,6 +56,173 @@ export default function AdminPage() {
       {tab === "orders" && <OrdersAdmin headers={adminHeaders} />}
       {tab === "bank" && <BankAdmin headers={adminHeaders} />}
       {tab === "trades" && <TradesAdmin headers={adminHeaders} />}
+      {tab === "telegram" && <TelegramAdmin headers={adminHeaders} />}
+    </div>
+  );
+}
+
+function TelegramAdmin({ headers }) {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API}/admin/telegram/status`, { headers: headers() });
+      setStatus(r.data);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { refresh(); }, []);
+
+  const sync = async () => {
+    setSyncing(true);
+    setMsg("");
+    try {
+      const r = await axios.post(`${API}/admin/telegram/sync`, {}, { headers: headers() });
+      if (r.data.new_chats?.length) {
+        setMsg(`✅ تم ربط ${r.data.new_chats.length} حساب جديد!`);
+      } else {
+        setMsg("ℹ️ لم يتم العثور على حسابات جديدة. تأكد أنك أرسلت /start للبوت ثم اضغط المزامنة.");
+      }
+      refresh();
+    } catch (e) {
+      setMsg(e.response?.data?.detail || "خطأ");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const test = async () => {
+    setMsg("");
+    try {
+      const r = await axios.post(`${API}/admin/telegram/test`, {}, { headers: headers() });
+      setMsg(`📤 تم إرسال ${r.data.sent} رسالة. تحقق من تيليجرام!`);
+    } catch (e) {
+      setMsg(e.response?.data?.detail || "خطأ");
+    }
+  };
+
+  const unlink = async (chat_id) => {
+    if (!window.confirm("إلغاء ربط هذا الحساب؟")) return;
+    await axios.delete(`${API}/admin/telegram/${chat_id}`, { headers: headers() });
+    refresh();
+  };
+
+  if (loading) return <p className="text-[#A0AEC0]">جاري التحميل...</p>;
+
+  return (
+    <div data-testid="telegram-admin" className="max-w-2xl space-y-4">
+      <div className="bg-[#1A1D24] rounded-2xl p-6 border border-[#2D3748]">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-12 h-12 rounded-2xl bg-[#229ED9] flex items-center justify-center">
+            <Send className="text-white" size={22} />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white">إشعارات تيليجرام</h2>
+            <p className="text-sm text-[#A0AEC0]">احصل على إشعار فوري بكل طلب جديد</p>
+          </div>
+        </div>
+
+        {status?.bot_username && (
+          <div className="bg-[#0F1115] rounded-xl p-4 mb-4 border border-[#2D3748]">
+            <p className="text-xs text-[#A0AEC0] mb-1">اسم البوت:</p>
+            <a
+              href={`https://t.me/${status.bot_username}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[#00E5FF] font-bold text-lg hover:underline"
+              data-testid="telegram-bot-link"
+            >
+              @{status.bot_username}
+            </a>
+          </div>
+        )}
+
+        <div className="bg-[#FFDE00]/10 border border-[#FFDE00]/30 rounded-xl p-4 mb-4 text-sm">
+          <p className="text-[#FFDE00] font-bold mb-2">📌 كيف تربط حسابك:</p>
+          <ol className="list-decimal list-inside space-y-1 text-white">
+            <li>افتح البوت أعلاه على تيليجرام</li>
+            <li>اضغط <b>Start</b> أو أرسل <code className="bg-[#0F1115] px-1 rounded">/start</code></li>
+            <li>اضغط زر <b>"مزامنة الحسابات"</b> أدناه</li>
+          </ol>
+        </div>
+
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={sync}
+            disabled={syncing}
+            className="flex-1 bg-[#00E5FF] text-[#0F1115] font-bold rounded-xl px-4 py-3 hover:-translate-y-0.5 transition-all disabled:opacity-60"
+            data-testid="telegram-sync-btn"
+          >
+            {syncing ? "جاري المزامنة..." : "🔄 مزامنة الحسابات"}
+          </button>
+          {status?.linked?.length > 0 && (
+            <button
+              onClick={test}
+              className="bg-[#FFDE00] text-[#0F1115] font-bold rounded-xl px-4 py-3 hover:-translate-y-0.5 transition-all"
+              data-testid="telegram-test-btn"
+            >
+              📤 رسالة اختبار
+            </button>
+          )}
+        </div>
+
+        {msg && (
+          <div className="bg-[#252932] rounded-xl p-3 text-sm text-white mb-4" data-testid="telegram-msg">
+            {msg}
+          </div>
+        )}
+
+        <div>
+          <p className="text-sm text-[#A0AEC0] mb-2">الحسابات المربوطة ({status?.count || 0}):</p>
+          {status?.linked?.length ? (
+            <div className="space-y-2">
+              {status.linked.map((c) => (
+                <div key={c.chat_id} className="flex items-center justify-between bg-[#0F1115] rounded-xl px-3 py-2">
+                  <div>
+                    <div className="text-white font-bold text-sm">
+                      {c.first_name || "User"} {c.username && <span className="text-[#A0AEC0]">@{c.username}</span>}
+                    </div>
+                    <div className="text-xs text-[#718096]" dir="ltr">ID: {c.chat_id}</div>
+                  </div>
+                  <button
+                    onClick={() => unlink(c.chat_id)}
+                    className="bg-[#FF4B72]/10 text-[#FF4B72] rounded-lg p-2 hover:bg-[#FF4B72]/20"
+                    data-testid={`unlink-${c.chat_id}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[#718096] text-sm">لا توجد حسابات مربوطة بعد.</p>
+          )}
+        </div>
+      </div>
+
+      <InstallPWAGuide />
+    </div>
+  );
+}
+
+function InstallPWAGuide() {
+  return (
+    <div className="bg-gradient-to-br from-[#1A1D24] to-[#252932] rounded-2xl p-6 border border-[#00E5FF]/30">
+      <h3 className="text-lg font-bold text-white mb-2">📱 ثبّت لوحة التحكم كتطبيق على آيفونك</h3>
+      <ol className="list-decimal list-inside space-y-1 text-sm text-[#A0AEC0]">
+        <li>افتح هذا الموقع في <b className="text-white">Safari</b> على آيفونك</li>
+        <li>اضغط زر <b className="text-white">المشاركة</b> (المربع مع السهم لأعلى) ⬆️</li>
+        <li>اختر <b className="text-white">"Add to Home Screen"</b> أو "إضافة إلى الشاشة الرئيسية"</li>
+        <li>راح يظهر كأيقونة على شاشتك تفتح مثل التطبيق تماماً</li>
+      </ol>
+      <p className="text-xs text-[#FFDE00] mt-3">
+        💡 مع إشعارات تيليجرام، راح يصلك تنبيه فوري لكل طلب — أحسن من تطبيق iOS عادي!
+      </p>
     </div>
   );
 }

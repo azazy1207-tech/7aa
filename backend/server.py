@@ -24,6 +24,7 @@ db = client[os.environ['DB_NAME']]
 ADMIN_EMAIL = os.environ['ADMIN_EMAIL']
 ADMIN_PASSWORD = os.environ['ADMIN_PASSWORD']
 JWT_SECRET = os.environ['JWT_SECRET']
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -471,6 +472,31 @@ async def create_order(o: OrderCreate, user: Optional[User] = Depends(try_get_cu
     doc["created_at"] = now_iso()
     await db.orders.insert_one(doc)
     doc.pop("_id", None)
+
+    # Send Telegram notification with receipt
+    try:
+        user_line = ""
+        if user:
+            if user.email:
+                user_line += f"\n📧 الإيميل: {user.email}"
+            if user.phone:
+                user_line += f"\n📱 الجوال: {user.phone}"
+            auth_label = {"google": "Google", "phone": "رقم جوال", "guest": "ضيف"}.get(user.auth_type or "guest", "ضيف")
+            user_line += f"\n🔐 نوع الحساب: {auth_label}"
+        contact_line = f"\n💬 تواصل: {o.buyer_contact}" if o.buyer_contact else ""
+        notes_line = f"\n📝 ملاحظات: {o.notes}" if o.notes else ""
+        caption = (
+            f"🛒 <b>طلب جديد!</b>\n\n"
+            f"📦 المنتج: <b>{prod['name']}</b>\n"
+            f"💰 السعر: <b>{prod['price']} ر.س</b>\n"
+            f"👤 المشتري: <b>{o.buyer_name}</b>"
+            f"{user_line}{contact_line}{notes_line}\n\n"
+            f"🆔 <code>{order.id}</code>"
+        )
+        await notify_admins(caption, photo_b64=o.receipt_image)
+    except Exception as e:
+        logger.warning(f"Failed to send order notification: {e}")
+
     return {"id": order.id, "status": "pending"}
 
 
@@ -596,6 +622,130 @@ async def admin_delete_trade(trade_id: str, admin=Depends(get_admin)):
     return {"ok": True}
 
 
+
+# ========== TELEGRAM NOTIFICATIONS ==========
+TG_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}" if TELEGRAM_BOT_TOKEN else None
+
+
+async def tg_send_message(chat_id: int, text: str) -> bool:
+    if not TG_API:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            r = await http.post(
+                f"{TG_API}/sendMessage",
+                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+            )
+        return r.status_code == 200
+    except Exception as e:
+        logger.warning(f"Telegram send_message failed: {e}")
+        return False
+
+
+async def tg_send_photo_b64(chat_id: int, photo_b64: str, caption: str = "") -> bool:
+    if not TG_API:
+        return False
+    try:
+        import base64
+        if photo_b64.startswith("data:"):
+            _, b64data = photo_b64.split(",", 1)
+        else:
+            b64data = photo_b64
+        photo_bytes = base64.b64decode(b64data)
+        async with httpx.AsyncClient(timeout=30) as http:
+            files = {"photo": ("receipt.png", photo_bytes, "image/png")}
+            data = {"chat_id": str(chat_id), "caption": caption, "parse_mode": "HTML"}
+            r = await http.post(f"{TG_API}/sendPhoto", files=files, data=data)
+        return r.status_code == 200
+    except Exception as e:
+        logger.warning(f"Telegram send_photo failed: {e}")
+        return False
+
+
+async def get_linked_chats() -> List[int]:
+    docs = await db.telegram_chats.find({}, {"_id": 0}).to_list(50)
+    return [d["chat_id"] for d in docs]
+
+
+async def notify_admins(text: str, photo_b64: Optional[str] = None):
+    chats = await get_linked_chats()
+    for cid in chats:
+        if photo_b64:
+            await tg_send_photo_b64(cid, photo_b64, caption=text)
+        else:
+            await tg_send_message(cid, text)
+
+
+@api_router.post("/admin/telegram/sync")
+async def telegram_sync(admin=Depends(get_admin)):
+    if not TG_API:
+        raise HTTPException(status_code=400, detail="بوت تيليجرام غير مهيأ")
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            r = await http.get(f"{TG_API}/getUpdates")
+        if r.status_code != 200:
+            raise HTTPException(status_code=502, detail="فشل الاتصال بتيليجرام")
+        data = r.json()
+        new_chats = []
+        for upd in data.get("result", []):
+            msg = upd.get("message") or upd.get("edited_message")
+            if not msg:
+                continue
+            chat = msg.get("chat", {})
+            chat_id = chat.get("id")
+            if not chat_id:
+                continue
+            existing = await db.telegram_chats.find_one({"chat_id": chat_id})
+            if not existing:
+                await db.telegram_chats.insert_one({
+                    "chat_id": chat_id,
+                    "first_name": chat.get("first_name", ""),
+                    "username": chat.get("username", ""),
+                    "linked_at": now_iso(),
+                })
+                new_chats.append(chat_id)
+                await tg_send_message(chat_id, "✅ تم ربط حسابك بنجاح! ستصلك إشعارات الطلبات الجديدة هنا.")
+        linked = await db.telegram_chats.find({}, {"_id": 0}).to_list(50)
+        return {"new_chats": new_chats, "linked": linked, "count": len(linked)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/admin/telegram/status")
+async def telegram_status(admin=Depends(get_admin)):
+    bot_username = ""
+    if TG_API:
+        try:
+            async with httpx.AsyncClient(timeout=5) as http:
+                r = await http.get(f"{TG_API}/getMe")
+            if r.status_code == 200:
+                bot_username = r.json().get("result", {}).get("username", "")
+        except Exception:
+            pass
+    linked = await db.telegram_chats.find({}, {"_id": 0}).to_list(50)
+    return {"bot_username": bot_username, "configured": bool(TG_API), "linked": linked, "count": len(linked)}
+
+
+@api_router.post("/admin/telegram/test")
+async def telegram_test(admin=Depends(get_admin)):
+    chats = await get_linked_chats()
+    if not chats:
+        raise HTTPException(status_code=400, detail="لا توجد حسابات مربوطة")
+    ok = 0
+    for cid in chats:
+        if await tg_send_message(cid, "🎉 <b>رسالة اختبار</b>\n\nالإشعارات تعمل بنجاح!"):
+            ok += 1
+    return {"sent": ok, "total": len(chats)}
+
+
+@api_router.delete("/admin/telegram/{chat_id}")
+async def telegram_unlink(chat_id: int, admin=Depends(get_admin)):
+    await db.telegram_chats.delete_one({"chat_id": chat_id})
+    return {"ok": True}
+
+
 # ========== HEALTH ==========
 @api_router.get("/")
 async def root():
@@ -623,7 +773,6 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def startup():
-    # Seed bank info if missing
     exists = await db.settings.find_one({"key": "bank_info"})
     if not exists:
         await db.settings.insert_one({
@@ -637,7 +786,6 @@ async def startup():
             ).model_dump(),
             "updated_at": now_iso(),
         })
-    # Seed sample products if empty
     count = await db.products.count_documents({})
     if count == 0:
         samples = [
