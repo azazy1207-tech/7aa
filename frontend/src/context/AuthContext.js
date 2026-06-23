@@ -1,8 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-export const API = `${https://sevenaa.onrender.com}/api`;
+export const API = "https://sevenaa.onrender.com";
 
 const AuthContext = createContext(null);
 
